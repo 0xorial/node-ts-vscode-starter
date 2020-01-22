@@ -1,0 +1,9 @@
+{
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": true
+  },
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "vscode-wds.configFileName": "webpack.dev.config.js",
+  "typescript.tsdk": "node_modules\\typescript\\lib"
+}
