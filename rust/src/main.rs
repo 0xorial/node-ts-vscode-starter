@@ -155,21 +155,22 @@ fn apply_move(state: &mut GameState, m: &Move) {
         }
         Move::Learn { action_id } => {
             let spell_index = state.learnable_spells.iter()
-                .position(|x| { x.reward.action_id == *action_id })
+                .position(|x| { x.action_id == *action_id })
                 .expect("Spell not found");
             let spell = state.learnable_spells.get(spell_index);
-            let spell_cost = [-spell_index as i8, 0, 0, 0];
-            if !can_afford(stat.inventory, spell_cost) {
+            let spell_cost = [-(spell_index as i8), 0, 0, 0];
+            if !can_afford(state.inventory, spell_cost) {
                 panic!("cannot afford learning")
             }
             cast(&mut state.inventory, spell_cost);
             let new_spell = Spell {
                 descriptor: spell.descriptor,
+
                 exhausted: false
             };
-            for i in ..spell {
+            for i in 0..spell {
                 let s = state.learnable_spells.get(i).expect("");
-                s.
+                // s.
             }
             state.spells.push_back(new_spell);
             if state.next_learnable_spells.len() > 0 {
