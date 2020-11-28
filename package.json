@@ -5,6 +5,8 @@
   "license": "MIT",
   "dependencies": {
     "@types/node": "^13.1.8",
+    "clipboardy": "^2.3.0",
+    "random-js": "^2.1.0",
     "typescript": "^3.7.5"
   }
 }
