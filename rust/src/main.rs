@@ -112,7 +112,7 @@ enum Move {
     Wait,
     Brew { action_id: u32 },
     Learn { action_id: u32 },
-    Cast { action_id: u32 },
+    Cast { action_id: u32, times: u32 },
 }
 
 fn get_move(state: &GameState) -> Move {
@@ -155,9 +155,10 @@ fn apply_move(state: &mut GameState, m: &Move) {
         }
         Move::Learn { action_id } => {
             let spell_index = state.learnable_spells.iter()
-                .position(|x| { x.action_id == *action_id })
+                .position(|x| { x.descriptor.action_id == *action_id })
                 .expect("Spell not found");
-            let spell = state.learnable_spells.get(spell_index);
+            let spell = state.learnable_spells.get(spell_index)
+                .expect("Spell not found");
             let spell_cost = [-(spell_index as i8), 0, 0, 0];
             if !can_afford(state.inventory, spell_cost) {
                 panic!("cannot afford learning")
@@ -165,23 +166,39 @@ fn apply_move(state: &mut GameState, m: &Move) {
             cast(&mut state.inventory, spell_cost);
             let new_spell = Spell {
                 descriptor: spell.descriptor,
-
                 exhausted: false
             };
-            for i in 0..spell {
-                let s = state.learnable_spells.get(i).expect("");
-                // s.
-            }
             state.spells.push_back(new_spell);
-            if state.next_learnable_spells.len() > 0 {
-                let next_learnable = state.next_learnable_spells.pop_front().expect("Expected spell");
-                state.learnable_spells.push_back(LearnableSpell {
-                    descriptor: next_learnable,
+            for i in 0..spell_index {
+                let mut s = state.learnable_spells.get_mut(i)
+                    .expect("index out of range");
+                s.reward = s.reward + 1;
+            }
+            let next_learnable = state.next_learnable_spells.pop_front();
+            if let Some(x) = next_learnable {
+                state.learnable_spells.push(LearnableSpell {
+                    descriptor: x,
                     reward: 0
                 });
             }
         }
-        Move::Cast { .. } => {}
+        Move::Cast { action_id, times } => {
+            let mut spell = state.spells.iter_mut()
+                .find(|x| x.descriptor.action_id == *action_id)
+                .expect("Spell not found");
+            if !can_afford(state.inventory, spell.descriptor.casting_price) {
+                panic!("Cannot afford");
+            }
+            if spell.exhausted {
+                panic!("Spell exhausted")
+            }
+
+            for i in 0..*times {
+                cast(&mut state.inventory, spell.descriptor.casting_price);
+            }
+
+            spell.exhausted = true;
+        }
     }
 }
 
