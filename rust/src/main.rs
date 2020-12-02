@@ -1,58 +1,12 @@
+mod solution;
+
 use std::collections::VecDeque;
 use rand_hc::Hc128Rng;
 use rand::seq::SliceRandom;
 use rand::{SeedableRng};
 use std::iter::FromIterator;
+use crate::solution::{GameState, Move, Order, SpellDescriptor, LearnableSpell, Spell, Inventory, get_move};
 
-type Inventory = [i8; 4];
-
-
-struct SpellDescriptor {
-    casting_price: Inventory,
-    action_id: u32,
-    repeatable: bool,
-}
-
-struct Spell {
-    descriptor: &'static SpellDescriptor,
-    exhausted: bool,
-}
-
-struct LearnableSpell {
-    descriptor: &'static SpellDescriptor,
-    reward: u32,
-}
-
-struct Order {
-    brewing_price: Inventory,
-    reward: u32,
-    action_id: u32,
-}
-
-struct GameState {
-    inventory: Inventory,
-    score: u32,
-
-    spells: VecDeque<Spell>,
-
-    learnable_spells: Vec<LearnableSpell>,
-    next_learnable_spells: VecDeque<&'static SpellDescriptor>,
-
-    orders: VecDeque<&'static Order>,
-    next_orders: VecDeque<&'static Order>,
-
-    potions_brewed: u32,
-    next_id: u32,
-    moves: u32,
-}
-
-impl GameState {
-    fn get_next_id(&mut self) -> u32 {
-        let r = self.next_id;
-        self.next_id = self.next_id + 1;
-        r
-    }
-}
 
 fn make_initial_state(all_potions: &'static [Order],
                       all_spells: &'static [SpellDescriptor]) -> GameState {
@@ -91,7 +45,7 @@ fn make_initial_state(all_potions: &'static [Order],
         potions_brewed: 0,
         score: 0,
         moves: 0,
-        spells: VecDeque::from_iter(INITIAL_SPELLS.iter().map(|x| {
+        spells: Vec::from_iter(INITIAL_SPELLS.iter().map(|x| {
             Spell {
                 descriptor: x,
                 exhausted: false,
@@ -107,17 +61,6 @@ static LEARNABLE_SPELLS: &'static [SpellDescriptor] = &[
 static INITIAL_SPELLS: &'static [SpellDescriptor] = &[
     SpellDescriptor { casting_price: [1, 2, -1, 0], action_id: 0, repeatable: true }
 ];
-
-enum Move {
-    Wait,
-    Brew { action_id: u32 },
-    Learn { action_id: u32 },
-    Cast { action_id: u32, times: u32 },
-}
-
-fn get_move(state: &GameState) -> Move {
-    return Move::Wait;
-}
 
 fn can_afford(inventory: Inventory, cost: Inventory) -> bool {
     inventory[0] > (-cost[0])
@@ -168,7 +111,7 @@ fn apply_move(state: &mut GameState, m: &Move) {
                 descriptor: spell.descriptor,
                 exhausted: false
             };
-            state.spells.push_back(new_spell);
+            state.spells.push(new_spell);
             for i in 0..spell_index {
                 let mut s = state.learnable_spells.get_mut(i)
                     .expect("index out of range");
