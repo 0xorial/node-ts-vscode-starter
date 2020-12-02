@@ -1,8 +1,6 @@
 use std::collections::VecDeque;
 use std::collections::BinaryHeap;
-use crate::make_initial_state;
 use std::cmp::Ordering;
-use crate::solution::Move::Brew;
 use crate::solution::SearchMove::GameMove;
 use std::rc::Rc;
 use std::iter::FromIterator;
@@ -155,7 +153,7 @@ fn make_brew(previous: &SearchNode, index: usize, order: &Order) -> Option<Searc
     }
     let mut new_state = previous_state.clone();
     cast(&mut new_state.inventory, order.brewing_price);
-    new_state.potions_brewed = new_state.potions_brewed + 1;
+    new_state.potions_brewed += 1;
     new_state.score = new_state.score + order.reward;
     let mut new_orders = new_state.orders.as_ref().clone();
     new_orders.swap_remove(index);
@@ -167,9 +165,74 @@ fn make_brew(previous: &SearchNode, index: usize, order: &Order) -> Option<Searc
     });
 }
 
+fn make_cast(previous: &SearchNode, index: usize, spell: &Spell, times: u32) -> Option<SearchNode> {
+    let previous_state = &previous.state_after_move;
+    if spell.exhausted {
+        return None;
+    }
+    if !can_afford(previous_state.inventory, spell.descriptor.casting_price) {
+        return None;
+    }
+    let mut new_state = previous_state.clone();
+    cast(&mut new_state.inventory, spell.descriptor.casting_price);
+    let mut new_spells = new_state.spells.as_ref().clone();
+    let new_spell = new_spells.get_mut(index).expect("No spell");
+    new_spell.exhausted = true;
+    new_state.spells = Rc::new(new_spells);
+    return Some(SearchNode {
+        last_move: GameMove(Move::Cast { action_id: spell.descriptor.action_id, times }),
+        estimated_score: get_state_score(&new_state),
+        state_after_move: new_state,
+    });
+}
+
+fn make_learn(previous: &SearchNode, index: usize, learnable: &LearnableSpell) -> Option<SearchNode> {
+    let previous_state = &previous.state_after_move;
+    let learn_price = [-(index as i8), 0, 0, 0];
+    if !can_afford(previous_state.inventory, learn_price) {
+        return None;
+    }
+    let mut new_state = previous_state.clone();
+    let learn_price = [(learnable.reward - (index as u32)) as i8, 0, 0, 0];
+    cast(&mut new_state.inventory, learn_price);
+    let mut new_spells = new_state.spells.as_ref().clone();
+    new_spells.push(Spell {
+        descriptor: learnable.descriptor,
+        exhausted: false,
+    });
+    new_state.spells = Rc::new(new_spells);
+    let mut new_learnable = new_state.learnable_spells.as_ref().clone();
+    new_learnable.swap_remove(index);
+    for i in 0..index {
+        let l = new_learnable.get_mut(i).expect("Index out of range");
+        l.reward += 1;
+    }
+    new_state.learnable_spells = Rc::new(new_learnable);
+    return Some(SearchNode {
+        last_move: GameMove(Move::Learn { action_id: learnable.descriptor.action_id }),
+        estimated_score: get_state_score(&new_state),
+        state_after_move: new_state,
+    });
+}
+
+fn make_wait(previous: &SearchNode) -> Option<SearchNode> {
+    let previous_state = &previous.state_after_move;
+    let mut new_state = previous_state.clone();
+    let mut new_spells = new_state.spells.as_ref().clone();
+    for mut s in new_spells.iter_mut() {
+        s.exhausted = false;
+    }
+    new_state.spells = Rc::new(new_spells);
+    return Some(SearchNode {
+        last_move: GameMove(Move::Wait),
+        estimated_score: get_state_score(&new_state),
+        state_after_move: new_state,
+    });
+}
+
+
 fn push(heap: &mut BinaryHeap<SearchNode>, x: Option<SearchNode>) {
-    if let Some(mut x) = x {
-        x.estimated_score = get_state_score(&x.state_after_move);
+    if let Some(x) = x {
         heap.push(x);
     }
 }
@@ -178,10 +241,24 @@ fn do_search(state: PlayerState) -> SearchNode {
     let mut heap = BinaryHeap::new();
     heap.push(make_initial_search_state(state));
 
+    let mut steps = 0;
     while let Some(state) = heap.pop() {
-        for (i, brew) in state.state_after_move.orders.iter().enumerate() {
-            push(&mut heap,make_brew(&state, i, brew));
+        if steps > 1000 {
+            break;
         }
+        steps += 1;
+        for (i, brew) in state.state_after_move.orders.iter().enumerate() {
+            push(&mut heap, make_brew(&state, i, brew));
+        }
+        for (i, learnable) in state.state_after_move.learnable_spells.iter().enumerate() {
+            push(&mut heap, make_learn(&state, i, learnable));
+        }
+        for (i, spell) in state.state_after_move.spells.iter().enumerate() {
+            push(&mut heap, make_cast(&state, i, spell, 1));
+            push(&mut heap, make_cast(&state, i, spell, 2));
+            push(&mut heap, make_cast(&state, i, spell, 3));
+        }
+        push(&mut heap, make_wait(&state));
     }
 
     let best = heap.pop().expect("No way");

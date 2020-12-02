@@ -136,7 +136,7 @@ fn apply_move(state: &mut GameState, m: &Move) {
                 panic!("Spell exhausted")
             }
 
-            for i in 0..*times {
+            for _ in 0..*times {
                 cast(&mut state.inventory, spell.descriptor.casting_price);
             }
 
