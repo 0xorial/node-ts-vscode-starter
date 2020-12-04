@@ -1,12 +1,11 @@
-use std::collections::VecDeque;
-use std::collections::BinaryHeap;
-use std::cmp::Ordering;
 use crate::solution::SearchMove::GameMove;
-use std::rc::Rc;
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
+use std::collections::VecDeque;
 use std::iter::FromIterator;
+use std::rc::Rc;
 
 pub type Inventory = [i8; 4];
-
 
 #[derive(Debug)]
 pub struct SpellDescriptor {
@@ -16,14 +15,14 @@ pub struct SpellDescriptor {
 }
 
 #[derive(Debug, Clone)]
-pub struct Spell {
-    pub descriptor: &'static SpellDescriptor,
+pub struct Spell<'a> {
+    pub descriptor: &'a SpellDescriptor,
     pub exhausted: bool,
 }
 
 #[derive(Debug, Clone)]
-pub struct LearnableSpell {
-    pub descriptor: &'static SpellDescriptor,
+pub struct LearnableSpell<'a> {
+    pub descriptor: &'a SpellDescriptor,
     pub reward: u32,
 }
 
@@ -34,17 +33,17 @@ pub struct Order {
     pub action_id: u32,
 }
 
-pub struct GameState {
+pub struct GameState<'a> {
     pub inventory: Inventory,
     pub score: u32,
 
-    pub spells: Vec<Spell>,
+    pub spells: Vec<Spell<'a>>,
 
-    pub learnable_spells: Vec<LearnableSpell>,
-    pub next_learnable_spells: VecDeque<&'static SpellDescriptor>,
+    pub learnable_spells: Vec<LearnableSpell<'a>>,
+    pub next_learnable_spells: VecDeque<&'a SpellDescriptor>,
 
-    pub orders: VecDeque<&'static Order>,
-    pub next_orders: VecDeque<&'static Order>,
+    pub orders: VecDeque<&'a Order>,
+    pub next_orders: VecDeque<&'a Order>,
 
     pub potions_brewed: u32,
     pub next_id: u32,
@@ -52,25 +51,25 @@ pub struct GameState {
 }
 
 #[derive(Debug, Clone)]
-pub struct PlayerState {
+pub struct PlayerState<'a> {
     pub inventory: Inventory,
-    pub spells: Rc<Vec<Spell>>,
+    pub spells: Rc<Vec<Spell<'a>>>,
 
-    pub learnable_spells: Rc<Vec<LearnableSpell>>,
-    pub orders: Rc<Vec<&'static Order>>,
+    pub learnable_spells: Rc<Vec<LearnableSpell<'a>>>,
+    pub orders: Rc<Vec<&'a Order>>,
 
     pub potions_brewed: u32,
     pub score: u32,
     pub moves: u32,
 }
 
-impl GameState {
-    fn get_next_id(&mut self) -> u32 {
-        let r = self.next_id;
-        self.next_id = self.next_id + 1;
-        r
-    }
-}
+// impl GameState {
+//     fn get_next_id(&mut self) -> u32 {
+//         let r = self.next_id;
+//         self.next_id = self.next_id + 1;
+//         r
+//     }
+// }
 
 pub enum Move {
     Wait,
@@ -98,22 +97,21 @@ enum SearchMove {
     Initial,
 }
 
-struct SearchNode {
+struct SearchNode<'a> {
     estimated_score: f64,
     last_move: SearchMove,
-    state_after_move: PlayerState,
+    state_after_move: PlayerState<'a>,
 }
 
-impl PartialEq for SearchNode {
+impl PartialEq for SearchNode<'_> {
     fn eq(&self, other: &Self) -> bool {
         return self.estimated_score == other.estimated_score;
     }
 }
 
-impl Eq for SearchNode {}
+impl Eq for SearchNode<'_> {}
 
-
-impl Ord for SearchNode {
+impl Ord for SearchNode<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
         let diff = other.estimated_score - self.estimated_score;
         if diff.abs() < 10e-12f64 {
@@ -128,7 +126,7 @@ impl Ord for SearchNode {
 }
 
 // `PartialOrd` needs to be implemented as well.
-impl PartialOrd for SearchNode {
+impl PartialOrd for SearchNode<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
@@ -146,7 +144,7 @@ fn make_initial_search_state(state: PlayerState) -> SearchNode {
     }
 }
 
-fn make_brew(previous: &SearchNode, index: usize, order: &Order) -> Option<SearchNode> {
+fn make_brew<'a>(previous: &SearchNode<'a>, index: usize, order: &Order) -> Option<SearchNode<'a>> {
     let previous_state = &previous.state_after_move;
     if !can_afford(previous_state.inventory, order.brewing_price) {
         return None;
@@ -159,15 +157,25 @@ fn make_brew(previous: &SearchNode, index: usize, order: &Order) -> Option<Searc
     new_orders.swap_remove(index);
     new_state.orders = Rc::new(new_orders);
     return Some(SearchNode {
-        last_move: GameMove(Move::Brew { action_id: order.action_id }),
+        last_move: GameMove(Move::Brew {
+            action_id: order.action_id,
+        }),
         estimated_score: get_state_score(&new_state),
         state_after_move: new_state,
     });
 }
 
-fn make_cast(previous: &SearchNode, index: usize, spell: &Spell, times: u32) -> Option<SearchNode> {
+fn make_cast<'a>(
+    previous: &SearchNode<'a>,
+    index: usize,
+    spell: &Spell,
+    times: u32,
+) -> Option<SearchNode<'a>> {
     let previous_state = &previous.state_after_move;
     if spell.exhausted {
+        return None;
+    }
+    if times > 1 && !spell.descriptor.repeatable {
         return None;
     }
     if !can_afford(previous_state.inventory, spell.descriptor.casting_price) {
@@ -180,13 +188,20 @@ fn make_cast(previous: &SearchNode, index: usize, spell: &Spell, times: u32) -> 
     new_spell.exhausted = true;
     new_state.spells = Rc::new(new_spells);
     return Some(SearchNode {
-        last_move: GameMove(Move::Cast { action_id: spell.descriptor.action_id, times }),
+        last_move: GameMove(Move::Cast {
+            action_id: spell.descriptor.action_id,
+            times,
+        }),
         estimated_score: get_state_score(&new_state),
         state_after_move: new_state,
     });
 }
 
-fn make_learn(previous: &SearchNode, index: usize, learnable: &LearnableSpell) -> Option<SearchNode> {
+fn make_learn<'a>(
+    previous: &SearchNode<'a>,
+    index: usize,
+    learnable: &LearnableSpell<'a>,
+) -> Option<SearchNode<'a>> {
     let previous_state = &previous.state_after_move;
     let learn_price = [-(index as i8), 0, 0, 0];
     if !can_afford(previous_state.inventory, learn_price) {
@@ -209,13 +224,15 @@ fn make_learn(previous: &SearchNode, index: usize, learnable: &LearnableSpell) -
     }
     new_state.learnable_spells = Rc::new(new_learnable);
     return Some(SearchNode {
-        last_move: GameMove(Move::Learn { action_id: learnable.descriptor.action_id }),
+        last_move: GameMove(Move::Learn {
+            action_id: learnable.descriptor.action_id,
+        }),
         estimated_score: get_state_score(&new_state),
         state_after_move: new_state,
     });
 }
 
-fn make_wait(previous: &SearchNode) -> Option<SearchNode> {
+fn make_wait<'a>(previous: &SearchNode<'a>) -> Option<SearchNode<'a>> {
     let previous_state = &previous.state_after_move;
     let mut new_state = previous_state.clone();
     let mut new_spells = new_state.spells.as_ref().clone();
@@ -230,8 +247,7 @@ fn make_wait(previous: &SearchNode) -> Option<SearchNode> {
     });
 }
 
-
-fn push(heap: &mut BinaryHeap<SearchNode>, x: Option<SearchNode>) {
+fn push<'a>(heap: &mut BinaryHeap<SearchNode<'a>>, x: Option<SearchNode<'a>>) {
     if let Some(x) = x {
         heap.push(x);
     }
@@ -281,6 +297,6 @@ pub fn get_move(state: &GameState) -> Move {
 
     return match result.last_move {
         GameMove(m) => m,
-        SearchMove::Initial => Move::Wait
+        SearchMove::Initial => Move::Wait,
     };
 }
